@@ -1,0 +1,2 @@
+pyTelegramBotAPI==3.6.6
+peewee==3.11.2
