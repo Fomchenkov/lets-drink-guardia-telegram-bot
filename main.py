@@ -137,10 +137,22 @@ def text_content_handler(message):
 		return bot.send_message(cid, texts.lets_register, reply_markup=keyboard)
 
 	
-	# Обработка кнопрк главного меню
+	# Обработка кнопок главного меню
 	if message.text == 'Хочу бухать!':
-		# TODO
-		return bot.send_message(cid, 'В разработке...')
+		users = database.User.select().where(database.User.uid != uid)
+		if len(users) == 0:
+			return bot.send_message(cid, texts.no_active_user)
+		bot.send_message(cid, texts.lets_drink_text, parse_mode='HTML')
+		for x in users:
+			text = util.generate_user_text(x)
+			keyboard = types.InlineKeyboardMarkup()
+			keyboard.add(types.InlineKeyboardButton('🥃 Пригласить бухать! 🥃', callback_data='invitedrink_{!s}'.format(x.id)))
+			keyboard.add(
+				types.InlineKeyboardButton('⬅️', callback_data='seeleftuser_{!s}'.format(x.id)),  # TODO
+				types.InlineKeyboardButton('➡️', callback_data='seerightuser_{!s}'.format(x.id)),  # TODO
+			)
+			bot.send_message(cid, text, reply_markup=keyboard)
+		return
 	elif message.text == 'Моя анкета':
 		text = 'Ваша анкета:\n\n{!s}'.format(util.generate_user_text(user))
 		markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=False, row_width=1)
@@ -173,6 +185,57 @@ def callback_inline(call):
 		READY_TO_REGISTER[uid]['gender'] = gender
 		bot.edit_message_text('✅ Выбрано!', chat_id=cid, message_id=call.message.message_id, reply_markup=None)
 		return bot.send_message(cid, texts.register_ask_about)
+	elif call.data.startswith('seeanket'):
+		user_id = int(call.data.split('_')[1])
+
+		user = database.User.select().where(database.User.id == user_id)[0]
+	
+		return bot.send_message(cid, util.generate_user_text(user))
+	elif call.data.startswith('invitedrink'):
+		user_id = int(call.data.split('_')[1])
+
+		user = database.User.select().where(database.User.id == user_id)[0]
+		my_user = database.User.select().where(database.User.uid == uid)[0]
+
+		try:
+			keyboard = types.InlineKeyboardMarkup()
+			keyboard.add(types.InlineKeyboardButton('👀 Посмотреть анкету 👀', callback_data='seeanket_{!s}'.format(my_user.id)))
+			keyboard.add(
+				types.InlineKeyboardButton('✅ Согласиться ✅', callback_data='confirmdrink_{!s}'.format(my_user.id)),
+				types.InlineKeyboardButton('❌ Послать нахуй ❌', callback_data='notconfirmdrink_{!s}'.format(my_user.id))
+			)
+			bot.send_message(user.uid, texts.drink_invite, reply_markup=keyboard)
+		except Exception as e:
+			print(e)
+
+		return bot.send_message(cid, texts.success_inviting.format(user.name))
+	elif call.data.startswith('confirmdrink'):
+		user_id = int(call.data.split('_')[1])
+
+		user = database.User.select().where(database.User.id == user_id)[0]
+		my_user = database.User.select().where(database.User.uid == uid)[0]
+
+		try:
+			text = 'Пользователь {!s} согласен бухнуть с вами!'.format(my_user.name)
+			keyboard = types.InlineKeyboardMarkup()
+			keyboard.add(types.InlineKeyboardButton('Ссылка на ЛС', url='tg://user?id={!s}'.format(my_user.uid)))
+			bot.send_message(user.uid, text, parse_mode='HTML', reply_markup=keyboard)
+		except Exception as e:
+			print(e)
+
+		return bot.edit_message_text('Принято!', chat_id=cid, message_id=call.message.message_id, reply_markup=None)
+	elif call.data.startswith('notconfirmdrink'):
+		user_id = int(call.data.split('_')[1])
+
+		user = database.User.select().where(database.User.id == user_id)[0]
+
+		try:
+			text = 'Пользователь {!s} отказал вам в пьянке'.format(user.name)
+			bot.send_message(user.uid, text)
+		except Exception as e:
+			print(e)
+
+		return bot.edit_message_text('Послан нахуй', chat_id=cid, message_id=call.message.message_id, reply_markup=None)
 
 
 if __name__ == '__main__':
