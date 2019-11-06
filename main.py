@@ -20,7 +20,28 @@ logger = logging.getLogger(__name__)
 bot = telebot.TeleBot(config.BOT_TOKEN)
 
 READY_TO_REGISTER = {}
+
 READY_TO_EMAIL = {}
+
+READY_TO_EDIT_NAME = {}
+READY_TO_EDIT_AGE = {}
+READY_TO_EDIT_ABOUT = {}
+
+
+def clean_all_ready(uid):
+	"""
+	Очистить все READT TO
+	"""
+	if uid in READY_TO_REGISTER:
+		del READY_TO_REGISTER[uid]
+	if uid in READY_TO_EMAIL:
+		del READY_TO_EMAIL[uid]
+	if uid in READY_TO_EDIT_NAME:
+		del READY_TO_EDIT_NAME[uid]
+	if uid in READY_TO_EDIT_AGE:
+		del READY_TO_EDIT_AGE[uid]
+	if uid in READY_TO_EDIT_ABOUT:
+		del READY_TO_EDIT_ABOUT[uid]
 
 
 @bot.message_handler(commands=['start'])
@@ -29,6 +50,8 @@ def start_command_handler(message):
 	uid = message.from_user.id
 
 	logger.info('Bot started by {!s}'.format(message.from_user.first_name))
+
+	clean_all_ready(uid)
 
 	query = database.User.select().where(database.User.uid == uid)
 
@@ -39,13 +62,10 @@ def start_command_handler(message):
 		markup.row(message.from_user.first_name)
 		return bot.send_message(cid, texts.register_ask_name, reply_markup=markup)
 
-	user = query.get()
-	bot.send_message(cid, texts.allready_register)
-	text = 'Ваша анкета:\n\n{!s}'.format(util.generate_user_text(user))
 	markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=False, row_width=1)
 	for x in config.main_markup:
 		markup.row(*x)
-	return bot.send_message(cid, text, reply_markup=markup)		
+	return bot.send_message(cid, texts.allready_register, reply_markup=markup)	
 
 
 @bot.message_handler(commands=['admin'])
@@ -56,6 +76,8 @@ def admin_command_handler(message):
 	# Проверка прав доступа
 	if uid not in config.ADMINS:
 		return bot.send_message(cid, texts.admin_access_denied)
+
+	clean_all_ready(uid)	
 
 	text = 'Админ-панель'
 	markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=False, row_width=1)
@@ -176,16 +198,17 @@ def text_content_handler(message):
 			return bot.send_message(cid, texts.register_ask_location)
 
 	# Обработать отмену действий админа
-	if message.text == '❌ Отмена':
-		if uid in READY_TO_EMAIL:
-			del READY_TO_EMAIL[uid]
-		text = 'Действие отменено'
-		bot.send_message(cid, text)
-		text = 'Админ-панель'
-		markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=False, row_width=1)
-		for x in config.admin_markup:
-			markup.row(*x)
-		return bot.send_message(cid, text, reply_markup=markup)
+	if uid in config.ADMINS:
+		if message.text == '❌ Отмена':
+			if uid in READY_TO_EMAIL:
+				del READY_TO_EMAIL[uid]
+			text = 'Действие отменено'
+			bot.send_message(cid, text)
+			text = 'Админ-панель'
+			markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=False, row_width=1)
+			for x in config.admin_markup:
+				markup.row(*x)
+			return bot.send_message(cid, text, reply_markup=markup)
 
 	# Обработать рассылку сообщений
 	if uid in READY_TO_EMAIL:
@@ -219,6 +242,76 @@ def text_content_handler(message):
 
 	user = query.get()
 
+	# Обработка отмены пользователей
+	if message.text == '❌ Отменить':
+		if uid in READY_TO_EDIT_NAME:
+			del READY_TO_EDIT_NAME[uid]
+		if uid in READY_TO_EDIT_AGE:
+			del READY_TO_EDIT_AGE[uid]
+		if uid in READY_TO_EDIT_ABOUT:
+			del READY_TO_EDIT_ABOUT[uid]
+		text = 'Действие отменено'
+		markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=False, row_width=1)
+		for x in config.main_markup:
+			markup.row(*x)
+		return bot.send_message(cid, text, reply_markup=markup)
+
+
+	# Обработка изменений данных анкеты
+	if uid in READY_TO_EDIT_NAME:
+		if 'name' not in READY_TO_EDIT_NAME[uid]:
+			READY_TO_EDIT_NAME[uid]['name'] = message.text
+
+			q = database.User.update({database.User.name: READY_TO_EDIT_NAME[uid]['name']}).where(database.User.uid == uid)
+			q.execute()
+
+			del READY_TO_EDIT_NAME[uid]
+			text = 'Вы успешно изменили имя'
+			markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=False, row_width=1)
+			for x in config.main_markup:
+				markup.row(*x)
+			return bot.send_message(cid, text, reply_markup=markup)
+
+
+	# Обработка изменений данных анкеты
+	if uid in READY_TO_EDIT_AGE:
+		if 'age' not in READY_TO_EDIT_AGE[uid]:
+			
+			try:
+				int(message.text)
+			except Exception as e:
+				text = 'Введите число!'
+				return bot.send_message(cid, text)
+
+			READY_TO_EDIT_AGE[uid]['age'] = int(message.text)
+
+			q = database.User.update({database.User.age: READY_TO_EDIT_AGE[uid]['age']}).where(database.User.uid == uid)
+			q.execute()
+
+			del READY_TO_EDIT_AGE[uid]
+			text = 'Вы успешно изменили возраст'
+			markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=False, row_width=1)
+			for x in config.main_markup:
+				markup.row(*x)
+			return bot.send_message(cid, text, reply_markup=markup)
+
+
+	# Обработка изменений данных анкеты
+	if uid in READY_TO_EDIT_ABOUT:
+		if 'about' not in READY_TO_EDIT_ABOUT[uid]:
+			READY_TO_EDIT_ABOUT[uid]['about'] = message.text
+
+			q = database.User.update({database.User.about: READY_TO_EDIT_ABOUT[uid]['about']}).where(database.User.uid == uid)
+			q.execute()
+
+			del READY_TO_EDIT_ABOUT[uid]
+			text = 'Вы успешно изменили описание'
+			markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=False, row_width=1)
+			for x in config.main_markup:
+				markup.row(*x)
+			return bot.send_message(cid, text, reply_markup=markup)
+
+
 	# Обработка кнопок главного меню
 	if message.text == '🍺 Хочу выпить! 🍺':
 		users = database.User.select().where(database.User.uid != uid)
@@ -236,10 +329,11 @@ def text_content_handler(message):
 		return bot.send_message(cid, text, reply_markup=keyboard)
 	elif message.text == '👑 Моя анкета 👑':
 		text = 'Ваша анкета:\n\n{!s}'.format(util.generate_user_text(user))
-		markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=False, row_width=1)
-		for x in config.main_markup:
-			markup.row(*x)
-		return bot.send_message(cid, text, reply_markup=markup)
+		keyboard = types.InlineKeyboardMarkup()
+		keyboard.add(types.InlineKeyboardButton('✏️ Изменить имя ✏️', callback_data='editname'))
+		keyboard.add(types.InlineKeyboardButton('✏️ Изменить возраст ✏️', callback_data='editage'))
+		keyboard.add(types.InlineKeyboardButton('✏️ Изменить описание ✏️', callback_data='editabout'))
+		return bot.send_message(cid, text, reply_markup=keyboard)
 	elif message.text == '📨 Поддержка 📨':
 		keyboard = types.InlineKeyboardMarkup()
 		keyboard.add(types.InlineKeyboardButton('Написать в поддержку', url=config.support_url))
@@ -382,6 +476,12 @@ def callback_inline(call):
 					prev_user = all_users[-1]
 
 		text = util.generate_user_text(prev_user)
+
+		# Проверка на ошибку редактирования сообщения
+		if call.message.text == text:
+			text = 'Больше нет пользователей'
+			return bot.send_message(cid, text)
+
 		keyboard = types.InlineKeyboardMarkup()
 		keyboard.add(types.InlineKeyboardButton('🥃 Пригласить выпить! 🥃', callback_data='invitedrink_{!s}'.format(prev_user.id)))
 		keyboard.add(
@@ -406,6 +506,12 @@ def callback_inline(call):
 					next_user = all_users[0]
 
 		text = util.generate_user_text(next_user)
+
+		# Проверка на ошибку редактирования сообщения
+		if call.message.text == text:
+			text = 'Больше нет пользователей'
+			return bot.send_message(cid, text)
+
 		keyboard = types.InlineKeyboardMarkup()
 		keyboard.add(types.InlineKeyboardButton('🥃 Пригласить выпить! 🥃', callback_data='invitedrink_{!s}'.format(next_user.id)))
 		keyboard.add(
@@ -413,6 +519,26 @@ def callback_inline(call):
 			types.InlineKeyboardButton('➡️', callback_data='seerightuser_{!s}'.format(next_user.id)),
 		)
 		return bot.edit_message_text(text, chat_id=cid, message_id=call.message.message_id, reply_markup=keyboard)
+
+	# Обработка редактирования анкеты
+	if call.data == 'editname':
+		READY_TO_EDIT_NAME[uid] = {}
+		text = 'Введите новое имя'
+		markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=False, row_width=1)
+		markup.row('❌ Отменить')
+		return bot.send_message(cid, text, reply_markup=markup)
+	elif call.data == 'editage':
+		READY_TO_EDIT_AGE[uid] = {}
+		text = 'Введите ваш возраст'
+		markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=False, row_width=1)
+		markup.row('❌ Отменить')
+		return bot.send_message(cid, text, reply_markup=markup)
+	elif call.data == 'editabout':
+		READY_TO_EDIT_ABOUT[uid] = {}
+		text = 'Введите новое описание'
+		markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=False, row_width=1)
+		markup.row('❌ Отменить')
+		return bot.send_message(cid, text, reply_markup=markup)
 
 
 if __name__ == '__main__':
@@ -422,7 +548,6 @@ if __name__ == '__main__':
 """
 TO-DO List
 
-- Сделать редактирование анкеты
 - Сделать фотки к анкете
 - Cделать осмысленное логирование
 """
