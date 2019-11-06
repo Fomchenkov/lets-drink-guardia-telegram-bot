@@ -49,7 +49,7 @@ def start_command_handler(message):
 	cid = message.chat.id
 	uid = message.from_user.id
 
-	logger.info('Bot started by {!s}'.format(message.from_user.first_name))
+	logger.info('Бот запущен {!s} [{!s}]'.format(message.from_user.first_name, uid))
 
 	clean_all_ready(uid)
 
@@ -75,6 +75,7 @@ def admin_command_handler(message):
 
 	# Проверка прав доступа
 	if uid not in config.ADMINS:
+		logger.info('Несанкционированный доступ к админ-панели {!s} [{!s}]'.format(message.from_user.first_name, uid))
 		return bot.send_message(cid, texts.admin_access_denied)
 
 	clean_all_ready(uid)	
@@ -108,6 +109,8 @@ def location_content_handler(message):
 				location_long=READY_TO_REGISTER[uid]['location']['long']
 			)
 			user.save()
+
+			logger.info('Успешная регистрация {!s} [{!s}]'.format(message.from_user.first_name, uid))
 
 			print(READY_TO_REGISTER[uid])
 
@@ -144,6 +147,8 @@ def photo_content_handler(message):
 			except Exception as e:
 				print(e)
 				continue
+
+		logger.info('Рассылка фото {!s} [{!s}]'.format(message.from_user.first_name, uid))
 
 		os.remove(photo_path)
 		bot.send_message(cid, texts.success_email_text)
@@ -223,6 +228,8 @@ def text_content_handler(message):
 				print(e)
 				continue
 
+		logger.info('Рассылка текста {!s} [{!s}] {!s}'.format(message.from_user.first_name, uid, message.text))
+
 		bot.send_message(cid, texts.success_email_text)
 		text = 'Админ-панель'
 		markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=False, row_width=1)
@@ -234,6 +241,7 @@ def text_content_handler(message):
 
 	# Проверка на регистрацию пользователя
 	if not query.exists():
+		logger.info('Отправка текстового сообщения без регистрации в боте {!s} [{!s}]'.format(message.from_user.first_name, uid))
 		bot.send_message(cid, random.choice(texts.sheet_frases), reply_markup=types.ReplyKeyboardRemove())
 		bot_start_url = 'https://t.me/{!s}?start={!s}'.format(bot.get_me().username, uid)
 		keyboard = types.InlineKeyboardMarkup()
@@ -266,6 +274,9 @@ def text_content_handler(message):
 			q.execute()
 
 			del READY_TO_EDIT_NAME[uid]
+
+			logger.info('Редактирование имени {!s} [{!s}]'.format(message.from_user.first_name, uid))
+
 			text = 'Вы успешно изменили имя'
 			markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=False, row_width=1)
 			for x in config.main_markup:
@@ -289,6 +300,9 @@ def text_content_handler(message):
 			q.execute()
 
 			del READY_TO_EDIT_AGE[uid]
+
+			logger.info('Редактирование возраста {!s} [{!s}]'.format(message.from_user.first_name, uid))
+
 			text = 'Вы успешно изменили возраст'
 			markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=False, row_width=1)
 			for x in config.main_markup:
@@ -305,6 +319,9 @@ def text_content_handler(message):
 			q.execute()
 
 			del READY_TO_EDIT_ABOUT[uid]
+
+			logger.info('Редактирование о себе {!s} [{!s}]'.format(message.from_user.first_name, uid))
+
 			text = 'Вы успешно изменили описание'
 			markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=False, row_width=1)
 			for x in config.main_markup:
@@ -314,6 +331,8 @@ def text_content_handler(message):
 
 	# Обработка кнопок главного меню
 	if message.text == '🍺 Хочу выпить! 🍺':
+		logger.info('Хочет пить {!s} [{!s}]'.format(message.from_user.first_name, uid))
+
 		users = database.User.select().where(database.User.uid != uid)
 		if len(users) == 0:
 			return bot.send_message(cid, texts.no_active_user)
@@ -328,6 +347,7 @@ def text_content_handler(message):
 		)
 		return bot.send_message(cid, text, reply_markup=keyboard)
 	elif message.text == '👑 Моя анкета 👑':
+		logger.info('Просмотр своей анкеты {!s} [{!s}]'.format(message.from_user.first_name, uid))
 		text = 'Ваша анкета:\n\n{!s}'.format(util.generate_user_text(user))
 		keyboard = types.InlineKeyboardMarkup()
 		keyboard.add(types.InlineKeyboardButton('✏️ Изменить имя ✏️', callback_data='editname'))
@@ -335,6 +355,7 @@ def text_content_handler(message):
 		keyboard.add(types.InlineKeyboardButton('✏️ Изменить описание ✏️', callback_data='editabout'))
 		return bot.send_message(cid, text, reply_markup=keyboard)
 	elif message.text == '📨 Поддержка 📨':
+		logger.info('Просмотр поддержки {!s} [{!s}]'.format(message.from_user.first_name, uid))
 		keyboard = types.InlineKeyboardMarkup()
 		keyboard.add(types.InlineKeyboardButton('Написать в поддержку', url=config.support_url))
 		return bot.send_message(cid, texts.support_text, reply_markup=keyboard)
@@ -348,6 +369,7 @@ def text_content_handler(message):
 			markup.row('❌ Отмена')
 			return bot.send_message(cid, text, reply_markup=markup)
 		elif message.text == 'Количество пользователей':
+			logger.info('Просмотрена статистика {!s} [{!s}]'.format(message.from_user.first_name, uid))
 			all_users = database.User.select()
 			text = 'Количество пользователей в боте: {!s}'.format(len(all_users))
 			return bot.send_message(cid, text)
@@ -380,6 +402,8 @@ def callback_inline(call):
 	elif call.data.startswith('seeanket'):
 		user_id = int(call.data.split('_')[1])
 
+		logger.info('Посмотрел анкету {!s} [{!s}]'.format(call.from_user.first_name, uid))
+
 		user = database.User.select().where(database.User.id == user_id)[0]
 
 		text = util.generate_user_text(user)
@@ -389,6 +413,8 @@ def callback_inline(call):
 
 	elif call.data.startswith('seegeo'):
 		user_id = int(call.data.split('_')[1])
+
+		logger.info('Посмотрел гео {!s} [{!s}]'.format(call.from_user.first_name, uid))
 
 		user = database.User.select().where(database.User.id == user_id)[0]
 
@@ -411,6 +437,8 @@ def callback_inline(call):
 	elif call.data.startswith('invitedrink'):
 		user_id = int(call.data.split('_')[1])
 
+		logger.info('Пригласил пить {!s} [{!s}]'.format(call.from_user.first_name, uid))
+
 		user = database.User.select().where(database.User.id == user_id)[0]
 		my_user = database.User.select().where(database.User.uid == uid)[0]
 
@@ -430,6 +458,8 @@ def callback_inline(call):
 	elif call.data.startswith('confirmdrink'):
 		user_id = int(call.data.split('_')[1])
 
+		logger.info('Подтвердил пить {!s} [{!s}]'.format(call.from_user.first_name, uid))
+
 		my_user = database.User.select().where(database.User.uid == uid)[0]
 		other_user = database.User.select().where(database.User.id == user_id)[0]
 
@@ -448,6 +478,8 @@ def callback_inline(call):
 	elif call.data.startswith('notconfirmdrink'):
 		user_id = int(call.data.split('_')[1])
 
+		logger.info('Отказался пить {!s} [{!s}]'.format(call.from_user.first_name, uid))
+
 		my_user = database.User.select().where(database.User.uid == uid)[0]
 		other_user = database.User.select().where(database.User.id == user_id)[0]
 
@@ -461,6 +493,8 @@ def callback_inline(call):
 		return bot.send_message(cid, 'Отказано')
 	elif call.data.startswith('seeleftuser'):
 		user_id = int(call.data.split('_')[1])
+
+		logger.info('Посмотрел анкету {!s} [{!s}]'.format(call.from_user.first_name, uid))
 
 		all_users = database.User.select().where(database.User.uid != uid)
 
@@ -491,6 +525,8 @@ def callback_inline(call):
 		return bot.edit_message_text(text, chat_id=cid, message_id=call.message.message_id, reply_markup=keyboard)
 	elif call.data.startswith('seerightuser'):
 		user_id = int(call.data.split('_')[1])
+
+		logger.info('Посмотрел анкету {!s} [{!s}]'.format(call.from_user.first_name, uid))
 
 		all_users = database.User.select().where(database.User.uid != uid)
 
@@ -542,6 +578,7 @@ def callback_inline(call):
 
 
 if __name__ == '__main__':
+	logger.info('Запуск процесса бота')
 	main_func.main(bot)
 
 
@@ -549,5 +586,9 @@ if __name__ == '__main__':
 TO-DO List
 
 - Сделать фотки к анкете
-- Cделать осмысленное логирование
+
+
+Следующие доработки
+
+- Сделать вывод тостов
 """
