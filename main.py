@@ -3,8 +3,6 @@
 import os
 import random
 import logging
-import requests
-from bs4 import BeautifulSoup
 
 import telebot
 from telebot import apihelper, types
@@ -361,29 +359,9 @@ def text_content_handler(message):
 		keyboard = types.InlineKeyboardMarkup()
 		keyboard.add(types.InlineKeyboardButton('Написать в поддержку', url=config.support_url))
 		return bot.send_message(cid, texts.support_text, reply_markup=keyboard)
-	elif message.text == 'Тост':
-		# Проверка существования тоста/страницы с тостами
-		for error in range(5): 
-			try: 
-				type = ['prikolnye', 'krasivye', 'korotkie'] 
-				randomType = random.randint(0, len(type))
-				page = random.randint(1, 13)
-				url = 'http://pozdravok.ru/toast/{!s}/{!s}.htm'.format(type[randomType], page)
-				site = requests.get(url)
-				pars = BeautifulSoup(site.text.replace('<br />', '\n'), "html.parser")
-				tost = []
-				tost = pars.findAll('p', class_="sfst")
-				randomTost = random.randint(0, len(tost))
-				bot.send_message(uid, tost[randomTost])
-			except Exception as e :
-				if error == 4:
-					logger.error(e)
-					print(e)
-					bot.send_message(uid, texts.error_tost)
-				if e == 'list index out of range':
-					continue
-				continue 
-			break
+	elif message.text == '🥂 Тост! 🥂':
+		text = util.get_tost_text()
+		return bot.send_message(cid, text)
 
 
 	# Обработать клавиатуру админа
@@ -491,6 +469,10 @@ def callback_inline(call):
 
 		try:
 			text = 'Пользователь {!s} согласен выпить с вами!'.format(my_user.name)
+
+			if call.from_user.username:
+				text += '\n\nСсылка: @{!s}'.format(call.from_user.username)
+
 			keyboard = types.InlineKeyboardMarkup()
 			keyboard.add(types.InlineKeyboardButton('Ссылка на ЛС', url='tg://user?id={!s}'.format(my_user.uid)))
 			bot.send_message(other_user.uid, text, parse_mode='HTML', reply_markup=keyboard)
@@ -613,9 +595,4 @@ if __name__ == '__main__':
 TO-DO List
 
 - Сделать фотки к анкете
-
-
-Следующие доработки
-
-- Сделать вывод тостов
 """
