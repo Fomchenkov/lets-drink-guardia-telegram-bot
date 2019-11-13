@@ -21,3 +21,4 @@ admin_markup = [
 ]
 
 support_url = 'https://t.me/fomchenkov_v'
+photos_path = 'user_photos/'

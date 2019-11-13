@@ -28,5 +28,4 @@ class User(BaseModel):
 	# 0 - Мужчина, 1 - Женщина
 	gender = BooleanField()
 	about = TextField()
-	location_lat = TextField()
-	location_long = TextField()
+	photo_path = TextField()

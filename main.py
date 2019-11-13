@@ -26,12 +26,14 @@ READY_TO_EMAIL = {}
 READY_TO_EDIT_NAME = {}
 READY_TO_EDIT_AGE = {}
 READY_TO_EDIT_ABOUT = {}
+READY_TO_EDIT_PHOTO = {}
 
 
 def clean_all_ready(uid):
 	"""
-	Очистить все READT TO
+	Очистить все READY TO
 	"""
+
 	if uid in READY_TO_REGISTER:
 		del READY_TO_REGISTER[uid]
 	if uid in READY_TO_EMAIL:
@@ -42,6 +44,8 @@ def clean_all_ready(uid):
 		del READY_TO_EDIT_AGE[uid]
 	if uid in READY_TO_EDIT_ABOUT:
 		del READY_TO_EDIT_ABOUT[uid]
+	if uid in READY_TO_EDIT_PHOTO:
+		del READY_TO_EDIT_PHOTO[uid]
 
 
 @bot.message_handler(commands=['start'])
@@ -87,6 +91,7 @@ def admin_command_handler(message):
 	return bot.send_message(cid, text, reply_markup=markup)	
 
 
+'''
 @bot.message_handler(content_types=['location'])
 def location_content_handler(message):
 	cid = message.chat.id
@@ -123,6 +128,7 @@ def location_content_handler(message):
 			for x in config.main_markup:
 				markup.row(*x)
 			return bot.send_message(cid, text, reply_markup=markup)
+'''
 
 
 @bot.message_handler(content_types=['photo'])
@@ -158,6 +164,69 @@ def photo_content_handler(message):
 		for x in config.admin_markup:
 			markup.row(*x)
 		return bot.send_message(cid, text, reply_markup=markup)
+
+	# Отправка фото при регистрации
+	if uid in READY_TO_REGISTER:
+		if 'photo' not in READY_TO_REGISTER[uid]:
+
+			# Сохранить фото
+			file_info = bot.get_file(message.photo[-1].file_id)
+			photo_path = '{!s}photo{!s}.jpg'.format(config.photos_path, uid)
+			downloaded_file = bot.download_file(file_info.file_path)
+			with open(photo_path, 'wb') as new_file:
+				new_file.write(downloaded_file)
+
+			READY_TO_REGISTER[uid]['photo'] = photo_path
+
+			logger.info('Успешная регистрация {!s}'.format(message.from_user.first_name))
+
+			# Добавление пользователя в базу данных.
+			user = database.User(
+				uid=uid, name=READY_TO_REGISTER[uid]['name'], age=READY_TO_REGISTER[uid]['age'], 
+				gender=READY_TO_REGISTER[uid]['gender'], about=READY_TO_REGISTER[uid]['about'],
+				photo_path=READY_TO_REGISTER[uid]['photo']
+			)
+			user.save()
+
+			logger.info('Успешная регистрация {!s} [{!s}]'.format(message.from_user.first_name, uid))
+
+			print(READY_TO_REGISTER[uid])
+
+			del READY_TO_REGISTER[uid]
+			markup = types.ReplyKeyboardRemove()
+			bot.send_message(cid, texts.success_register, reply_markup=markup)
+
+			text = 'Ваша анкета:\n\n{!s}'.format(util.generate_user_text(user))
+			markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=False, row_width=1)
+			for x in config.main_markup:
+				markup.row(*x)
+			return bot.send_photo(cid, open(user.photo_path, 'rb'), caption=text, reply_markup=markup)
+
+	# Обработка изменений данных анкеты
+	if uid in READY_TO_EDIT_PHOTO:
+		if 'photo' not in READY_TO_EDIT_PHOTO[uid]:
+
+			# Сохранить фото
+			file_info = bot.get_file(message.photo[-1].file_id)
+			photo_path = '{!s}photo{!s}.jpg'.format(config.photos_path, uid)
+			downloaded_file = bot.download_file(file_info.file_path)
+			with open(photo_path, 'wb') as new_file:
+				new_file.write(downloaded_file)
+
+			READY_TO_EDIT_PHOTO[uid]['photo'] = photo_path
+
+			q = database.User.update({database.User.photo_path: READY_TO_EDIT_PHOTO[uid]['photo']}).where(database.User.uid == uid)
+			q.execute()
+
+			del READY_TO_EDIT_PHOTO[uid]
+
+			logger.info('Редактирование фото {!s} [{!s}]'.format(message.from_user.first_name, uid))
+
+			text = 'Вы успешно изменили фото'
+			markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=False, row_width=1)
+			for x in config.main_markup:
+				markup.row(*x)
+			return bot.send_message(cid, text, reply_markup=markup)
 
 
 @bot.message_handler(content_types=['text'])
@@ -195,12 +264,10 @@ def text_content_handler(message):
 
 		if 'about' not in READY_TO_REGISTER[uid]:
 			READY_TO_REGISTER[uid]['about'] = message.text
-			keyboard = types.ReplyKeyboardMarkup(row_width=1, resize_keyboard=True)
-			keyboard.add(types.KeyboardButton(text='📍 Отправить местоположение', request_location=True))
-			return bot.send_message(cid, texts.register_ask_location, reply_markup=keyboard)
+			return bot.send_message(cid, texts.register_ask_photo)
 
-		if 'location' not in READY_TO_REGISTER[uid]:
-			return bot.send_message(cid, texts.register_ask_location)
+		if 'photo' not in READY_TO_REGISTER[uid]:
+			return bot.send_message(cid, texts.register_invite_photo)
 
 	# Обработать отмену действий админа
 	if uid in config.ADMINS:
@@ -252,12 +319,16 @@ def text_content_handler(message):
 
 	# Обработка отмены пользователей
 	if message.text == '❌ Отменить':
+
 		if uid in READY_TO_EDIT_NAME:
 			del READY_TO_EDIT_NAME[uid]
 		if uid in READY_TO_EDIT_AGE:
 			del READY_TO_EDIT_AGE[uid]
 		if uid in READY_TO_EDIT_ABOUT:
 			del READY_TO_EDIT_ABOUT[uid]
+		if uid in READY_TO_EDIT_PHOTO:
+			del READY_TO_EDIT_PHOTO[uid]
+
 		text = 'Действие отменено'
 		markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=False, row_width=1)
 		for x in config.main_markup:
@@ -328,6 +399,10 @@ def text_content_handler(message):
 				markup.row(*x)
 			return bot.send_message(cid, text, reply_markup=markup)
 
+	# Обработка изменений данных анкеты
+	if uid in READY_TO_EDIT_PHOTO:
+		if 'photo' not in READY_TO_EDIT_PHOTO[uid]:
+			return bot.send_message(cid, texts.register_invite_photo)
 
 	# Обработка кнопок главного меню
 	if message.text == '🍺 Хочу выпить! 🍺':
@@ -345,7 +420,7 @@ def text_content_handler(message):
 			types.InlineKeyboardButton('⬅️', callback_data='seeleftuser_{!s}'.format(users[0].id)),
 			types.InlineKeyboardButton('➡️', callback_data='seerightuser_{!s}'.format(users[0].id)),
 		)
-		return bot.send_message(cid, text, reply_markup=keyboard)
+		return bot.send_photo(cid, open(users[0].photo_path, 'rb'), caption=text, reply_markup=keyboard)
 	elif message.text == '👑 Моя анкета 👑':
 		logger.info('Просмотр своей анкеты {!s} [{!s}]'.format(message.from_user.first_name, uid))
 		text = 'Ваша анкета:\n\n{!s}'.format(util.generate_user_text(user))
@@ -353,13 +428,15 @@ def text_content_handler(message):
 		keyboard.add(types.InlineKeyboardButton('✏️ Изменить имя ✏️', callback_data='editname'))
 		keyboard.add(types.InlineKeyboardButton('✏️ Изменить возраст ✏️', callback_data='editage'))
 		keyboard.add(types.InlineKeyboardButton('✏️ Изменить описание ✏️', callback_data='editabout'))
-		return bot.send_message(cid, text, reply_markup=keyboard)
+		keyboard.add(types.InlineKeyboardButton('✏️ Изменить фото ✏️', callback_data='editphoto'))
+		return bot.send_photo(cid, open(user.photo_path, 'rb'), caption=text, reply_markup=keyboard)
 	elif message.text == '📨 Поддержка 📨':
 		logger.info('Просмотр поддержки {!s} [{!s}]'.format(message.from_user.first_name, uid))
 		keyboard = types.InlineKeyboardMarkup()
 		keyboard.add(types.InlineKeyboardButton('Написать в поддержку', url=config.support_url))
 		return bot.send_message(cid, texts.support_text, reply_markup=keyboard)
 	elif message.text == '🥂 Тост! 🥂':
+		logger.info('Выдан тост {!s} [{!s}]'.format(message.from_user.first_name, uid))
 		text = util.get_tost_text()
 		return bot.send_message(cid, text)
 
@@ -411,32 +488,7 @@ def callback_inline(call):
 		user = database.User.select().where(database.User.id == user_id)[0]
 
 		text = util.generate_user_text(user)
-		keyboard = types.InlineKeyboardMarkup()
-		keyboard.add(types.InlineKeyboardButton('⬆️ Вернуться к приглашению ⬆️', callback_data='returntoinvite_{!s}'.format(user_id)))
-		return bot.edit_message_text(text, chat_id=cid, message_id=call.message.message_id, reply_markup=keyboard)
-
-	elif call.data.startswith('seegeo'):
-		user_id = int(call.data.split('_')[1])
-
-		logger.info('Посмотрел гео {!s} [{!s}]'.format(call.from_user.first_name, uid))
-
-		user = database.User.select().where(database.User.id == user_id)[0]
-
-		return bot.send_location(cid, user.location_lat, user.location_long)
-	elif call.data.startswith('returntoinvite'):
-		user_id = int(call.data.split('_')[1])
-
-		other_user = database.User.select().where(database.User.id == user_id)[0]
-
-		text = util.generate_user_text(other_user)
-		keyboard = types.InlineKeyboardMarkup()
-		keyboard.add(types.InlineKeyboardButton('👀 Посмотреть анкету 👀', callback_data='seeanket_{!s}'.format(user_id)))
-		keyboard.add(types.InlineKeyboardButton('🗺 Посмотреть местоположение 🗺', callback_data='seegeo_{!s}'.format(user_id)))
-		keyboard.add(
-			types.InlineKeyboardButton('✅ Согласиться ✅', callback_data='confirmdrink_{!s}'.format(user_id)),
-			types.InlineKeyboardButton('❌ Отказаться ❌', callback_data='notconfirmdrink_{!s}'.format(user_id))
-		)
-		return bot.edit_message_text(texts.drink_invite, chat_id=cid, message_id=call.message.message_id, reply_markup=keyboard)
+		return bot.send_photo(cid, open(user.photo_path, 'rb'), caption=text)
 
 	elif call.data.startswith('invitedrink'):
 		user_id = int(call.data.split('_')[1])
@@ -449,7 +501,6 @@ def callback_inline(call):
 		try:
 			keyboard = types.InlineKeyboardMarkup()
 			keyboard.add(types.InlineKeyboardButton('👀 Посмотреть анкету 👀', callback_data='seeanket_{!s}'.format(my_user.id)))
-			keyboard.add(types.InlineKeyboardButton('🗺 Посмотреть местоположение 🗺', callback_data='seegeo_{!s}'.format(my_user.id)))
 			keyboard.add(
 				types.InlineKeyboardButton('✅ Согласиться ✅', callback_data='confirmdrink_{!s}'.format(my_user.id)),
 				types.InlineKeyboardButton('❌ Отказаться ❌', callback_data='notconfirmdrink_{!s}'.format(my_user.id))
@@ -479,10 +530,11 @@ def callback_inline(call):
 		except Exception as e:
 			print(e)
 
+		text = 'Пользователь {!s} принял ваше приглашение!'.format(other_user.name)
 		bot.delete_message(chat_id=cid, message_id=call.message.message_id)
 		keyboard = types.InlineKeyboardMarkup()
 		keyboard.add(types.InlineKeyboardButton('Ссылка на ЛС', url='tg://user?id={!s}'.format(other_user.uid)))
-		return bot.send_message(cid, 'Принято!', reply_markup=keyboard)
+		return bot.send_message(cid, text, reply_markup=keyboard)
 	elif call.data.startswith('notconfirmdrink'):
 		user_id = int(call.data.split('_')[1])
 
@@ -520,7 +572,7 @@ def callback_inline(call):
 		text = util.generate_user_text(prev_user)
 
 		# Проверка на ошибку редактирования сообщения
-		if call.message.text == text:
+		if call.message.caption == text:
 			text = 'Больше нет пользователей'
 			return bot.send_message(cid, text)
 
@@ -530,7 +582,8 @@ def callback_inline(call):
 			types.InlineKeyboardButton('⬅️', callback_data='seeleftuser_{!s}'.format(prev_user.id)),
 			types.InlineKeyboardButton('➡️', callback_data='seerightuser_{!s}'.format(prev_user.id)),
 		)
-		return bot.edit_message_text(text, chat_id=cid, message_id=call.message.message_id, reply_markup=keyboard)
+		return bot.edit_message_media(media=types.InputMediaPhoto(open(prev_user.photo_path, 'rb'), caption=text), chat_id=cid, message_id=call.message.message_id , reply_markup=keyboard)
+
 	elif call.data.startswith('seerightuser'):
 		user_id = int(call.data.split('_')[1])
 
@@ -552,7 +605,7 @@ def callback_inline(call):
 		text = util.generate_user_text(next_user)
 
 		# Проверка на ошибку редактирования сообщения
-		if call.message.text == text:
+		if call.message.caption == text:
 			text = 'Больше нет пользователей'
 			return bot.send_message(cid, text)
 
@@ -562,7 +615,7 @@ def callback_inline(call):
 			types.InlineKeyboardButton('⬅️', callback_data='seeleftuser_{!s}'.format(next_user.id)),
 			types.InlineKeyboardButton('➡️', callback_data='seerightuser_{!s}'.format(next_user.id)),
 		)
-		return bot.edit_message_text(text, chat_id=cid, message_id=call.message.message_id, reply_markup=keyboard)
+		return bot.edit_message_media(media=types.InputMediaPhoto(open(next_user.photo_path, 'rb'), caption=text), chat_id=cid, message_id=call.message.message_id , reply_markup=keyboard)
 
 	# Обработка редактирования анкеты
 	if call.data == 'editname':
@@ -583,16 +636,14 @@ def callback_inline(call):
 		markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=False, row_width=1)
 		markup.row('❌ Отменить')
 		return bot.send_message(cid, text, reply_markup=markup)
-
+	elif call.data == 'editphoto':
+		READY_TO_EDIT_PHOTO[uid] = {}
+		text = 'Отправьте новое фото'
+		markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=False, row_width=1)
+		markup.row('❌ Отменить')
+		return bot.send_message(cid, text, reply_markup=markup)
 
 
 if __name__ == '__main__':
 	logger.info('Запуск процесса бота')
 	main_func.main(bot)
-
-
-"""
-TO-DO List
-
-- Сделать фотки к анкете
-"""

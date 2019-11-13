@@ -1,5 +1,6 @@
 __pycache__
 .vscode
+user_photos
 *.log
 *.out
 *.db
