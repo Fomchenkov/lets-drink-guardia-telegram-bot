@@ -416,6 +416,7 @@ def text_content_handler(message):
 		text = util.generate_user_text(users[0])
 		keyboard = types.InlineKeyboardMarkup()
 		keyboard.add(types.InlineKeyboardButton('🥃 Пригласить выпить! 🥃', callback_data='invitedrink_{!s}'.format(users[0].id)))
+		keyboard.add(types.InlineKeyboardButton('🔴 Пожаловаться 🔴', callback_data='report_{!s}'.format(users[0].id)))
 		keyboard.add(
 			types.InlineKeyboardButton('⬅️', callback_data='seeleftuser_{!s}'.format(users[0].id)),
 			types.InlineKeyboardButton('➡️', callback_data='seerightuser_{!s}'.format(users[0].id)),
@@ -578,6 +579,7 @@ def callback_inline(call):
 
 		keyboard = types.InlineKeyboardMarkup()
 		keyboard.add(types.InlineKeyboardButton('🥃 Пригласить выпить! 🥃', callback_data='invitedrink_{!s}'.format(prev_user.id)))
+		keyboard.add(types.InlineKeyboardButton('🔴 Пожаловаться 🔴', callback_data='report_{!s}'.format(prev_user.id)))
 		keyboard.add(
 			types.InlineKeyboardButton('⬅️', callback_data='seeleftuser_{!s}'.format(prev_user.id)),
 			types.InlineKeyboardButton('➡️', callback_data='seerightuser_{!s}'.format(prev_user.id)),
@@ -611,11 +613,17 @@ def callback_inline(call):
 
 		keyboard = types.InlineKeyboardMarkup()
 		keyboard.add(types.InlineKeyboardButton('🥃 Пригласить выпить! 🥃', callback_data='invitedrink_{!s}'.format(next_user.id)))
+		keyboard.add(types.InlineKeyboardButton('🔴 Пожаловаться 🔴', callback_data='report_{!s}'.format(next_user.id)))
 		keyboard.add(
 			types.InlineKeyboardButton('⬅️', callback_data='seeleftuser_{!s}'.format(next_user.id)),
 			types.InlineKeyboardButton('➡️', callback_data='seerightuser_{!s}'.format(next_user.id)),
 		)
 		return bot.edit_message_media(media=types.InputMediaPhoto(open(next_user.photo_path, 'rb'), caption=text), chat_id=cid, message_id=call.message.message_id , reply_markup=keyboard)
+	# Жалобы на анкеты
+	if call.data.startswith('report'):
+		id = int(call.data.split('_')[1])
+		user = database.User.select().where(database.User.uid != uid)
+		text = '<b>{!s}</b> \n{!s}'.format(texts.channel_report, util.generate_user_text(].photo_path, 'rb'), caption = text, parse_mode = "HTML", reply_markup = keyboard)
 
 	# Обработка редактирования анкеты
 	if call.data == 'editname':
