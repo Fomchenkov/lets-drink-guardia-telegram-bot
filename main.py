@@ -91,46 +91,6 @@ def admin_command_handler(message):
 	return bot.send_message(cid, text, reply_markup=markup)	
 
 
-'''
-@bot.message_handler(content_types=['location'])
-def location_content_handler(message):
-	cid = message.chat.id
-	uid = message.from_user.id
-
-	# Обработка отправки местоположения при регистрации
-	if uid in READY_TO_REGISTER:
-		if 'about' in READY_TO_REGISTER[uid] and 'location' not in READY_TO_REGISTER[uid]:
-			READY_TO_REGISTER[uid]['location'] = {
-				'lat': message.location.latitude,
-				'long': message.location.longitude,
-			}
-			logger.info('Successfuly register from {!s}'.format(message.from_user.first_name))
-
-			# Добавление пользователя в базу данных.
-			user = database.User(
-				uid=uid, name=READY_TO_REGISTER[uid]['name'], age=READY_TO_REGISTER[uid]['age'], 
-				gender=READY_TO_REGISTER[uid]['gender'], about=READY_TO_REGISTER[uid]['about'],
-				location_lat=READY_TO_REGISTER[uid]['location']['lat'],
-				location_long=READY_TO_REGISTER[uid]['location']['long']
-			)
-			user.save()
-
-			logger.info('Успешная регистрация {!s} [{!s}]'.format(message.from_user.first_name, uid))
-
-			print(READY_TO_REGISTER[uid])
-
-			del READY_TO_REGISTER[uid]
-			markup = types.ReplyKeyboardRemove()
-			bot.send_message(cid, texts.success_register, reply_markup=markup)
-
-			text = 'Ваша анкета:\n\n{!s}'.format(util.generate_user_text(user))
-			markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=False, row_width=1)
-			for x in config.main_markup:
-				markup.row(*x)
-			return bot.send_message(cid, text, reply_markup=markup)
-'''
-
-
 @bot.message_handler(content_types=['photo'])
 def photo_content_handler(message):
 	cid = message.chat.id
@@ -496,8 +456,11 @@ def callback_inline(call):
 
 		logger.info('Пригласил пить {!s} [{!s}]'.format(call.from_user.first_name, uid))
 
-		user = database.User.select().where(database.User.id == user_id)[0]
-		my_user = database.User.select().where(database.User.uid == uid)[0]
+		my_user = database.User.select().where(database.User.uid == uid).get()
+		user = database.User.select().where(database.User.id == user_id)
+		if not user.exists():
+			return bot.send_message(cid, texts.user_not_found_text)
+		user = user.get()
 
 		try:
 			keyboard = types.InlineKeyboardMarkup()
@@ -561,6 +524,8 @@ def callback_inline(call):
 
 		print(all_users)
 
+		prev_user = all_users[-1]
+
 		# Найти следующего пользователя
 		for i, x in enumerate(all_users):
 			if x.id == user_id:
@@ -584,7 +549,7 @@ def callback_inline(call):
 			types.InlineKeyboardButton('⬅️', callback_data='seeleftuser_{!s}'.format(prev_user.id)),
 			types.InlineKeyboardButton('➡️', callback_data='seerightuser_{!s}'.format(prev_user.id)),
 		)
-		return bot.edit_message_media(media=types.InputMediaPhoto(open(prev_user.photo_path, 'rb'), caption=text), chat_id=cid, message_id=call.message.message_id , reply_markup=keyboard)
+		return bot.edit_message_media(media=types.InputMediaPhoto(open(prev_user.photo_path, 'rb'), caption=text), chat_id=cid, message_id=call.message.message_id, reply_markup=keyboard)
 
 	elif call.data.startswith('seerightuser'):
 		user_id = int(call.data.split('_')[1])
@@ -594,6 +559,8 @@ def callback_inline(call):
 		all_users = database.User.select().where(database.User.uid != uid)
 
 		print(all_users)
+
+		next_user = all_users[0]
 
 		# Найти следующего пользователя
 		for i, x in enumerate(all_users):
@@ -619,11 +586,47 @@ def callback_inline(call):
 			types.InlineKeyboardButton('➡️', callback_data='seerightuser_{!s}'.format(next_user.id)),
 		)
 		return bot.edit_message_media(media=types.InputMediaPhoto(open(next_user.photo_path, 'rb'), caption=text), chat_id=cid, message_id=call.message.message_id , reply_markup=keyboard)
+
 	# Жалобы на анкеты
-	if call.data.startswith('report'):
-		id = int(call.data.split('_')[1])
-		user = database.User.select().where(database.User.uid != uid)
-		text = '<b>{!s}</b> \n{!s}'.format(texts.channel_report, util.generate_user_text(].photo_path, 'rb'), caption = text, parse_mode = "HTML", reply_markup = keyboard)
+	elif call.data.startswith('report'):
+		user_id = int(call.data.split('_')[1])
+		user = database.User.select().where(database.User.uid == uid).get()
+		need_user = database.User.select().where(database.User.id == user_id)
+
+		if not need_user.exists():
+			return bot.send_message(cid, texts.user_not_found_text)
+		
+		need_user = need_user.get()
+
+		bot.send_message(cid, texts.report_anket_text, parse_mode='HTML')
+
+		text = 'Пользователь <a href="tg://user?id={!s}">{!s}</a> оставил пожаловаться на анкету\n\n{!s}'.format(
+			user.uid, user.name, util.generate_user_text(need_user))
+		keyboard = types.InlineKeyboardMarkup()
+		keyboard.add(
+			types.InlineKeyboardButton('😇 Помиловать', callback_data='saveanket_{!s}'.format(need_user.id)),
+			types.InlineKeyboardButton('😡 Забанить', callback_data='bananket_{!s}'.format(need_user.id)),
+		)
+		return bot.send_photo(config.report_channel_id, open(need_user.photo_path, 'rb'), caption=text, reply_markup=keyboard, parse_mode='HTML')
+
+	elif call.data.startswith('saveanket'):
+		user_id = int(call.data.split('_')[1])
+		return bot.edit_message_caption('Анкета помилована', chat_id=cid, message_id=call.message.message_id, reply_markup=None)
+
+	elif call.data.startswith('bananket'):
+		user_id = int(call.data.split('_')[1])
+
+		need_user = database.User.select().where(database.User.id == user_id).get()
+
+		markup = types.ReplyKeyboardRemove()
+		text = 'Ваша анкета удалена всвязи с решением администратора'
+		bot.send_message(need_user.uid, text, reply_markup=markup)
+
+		# Удалить пользователя из базы данных
+		q = database.User.delete().where(database.User.id == user_id)
+		q.execute()
+
+		return bot.edit_message_caption('Анкета забанена', chat_id=cid, message_id=call.message.message_id, reply_markup=None)
 
 	# Обработка редактирования анкеты
 	if call.data == 'editname':
