@@ -14,7 +14,7 @@ import config
 import texts
 
 
-logging.basicConfig(filename='logging.log', format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+logging.basicConfig(filename=config.LOG_PATH, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 bot = telebot.TeleBot(config.BOT_TOKEN)
