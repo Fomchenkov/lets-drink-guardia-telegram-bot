@@ -14,6 +14,7 @@ def create_tables():
 	"""
 	db.connect()
 	db.create_tables([User])
+	db.create_tables([comments])
 
 
 class BaseModel(Model):
@@ -23,9 +24,17 @@ class BaseModel(Model):
 
 class User(BaseModel):
 	uid = IntegerField(unique=True)
+	username = IntegerField(default = 0)
 	name = TextField()
 	age = IntegerField()
 	# 0 - Мужчина, 1 - Женщина
 	gender = BooleanField()
 	about = TextField()
 	photo_path = TextField()
+
+class comments(BaseModel):
+	uid = IntegerField()
+	myuid = IntegerField()
+	rating = IntegerField()
+	text = TextField()
+

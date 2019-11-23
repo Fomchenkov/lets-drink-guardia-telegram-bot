@@ -27,7 +27,8 @@ READY_TO_EDIT_NAME = {}
 READY_TO_EDIT_AGE = {}
 READY_TO_EDIT_ABOUT = {}
 READY_TO_EDIT_PHOTO = {}
-
+READY_TO_COMMENT = {}
+READY_TO_RATING = {}
 
 def clean_all_ready(uid):
 	"""
@@ -46,6 +47,10 @@ def clean_all_ready(uid):
 		del READY_TO_EDIT_ABOUT[uid]
 	if uid in READY_TO_EDIT_PHOTO:
 		del READY_TO_EDIT_PHOTO[uid]
+	if uid in READY_TO_COMMENT:
+		del READY_TO_COMMENT[uid]
+	if uid in READY_TO_RATING:
+		del READY_TO_RATING[uid]
 
 
 @bot.message_handler(commands=['start'])
@@ -147,6 +152,10 @@ def photo_content_handler(message):
 				photo_path=READY_TO_REGISTER[uid]['photo']
 			)
 			user.save()
+			if message.from_user.username:
+				user = database.User.get(database.User.uid == uid)
+				user.username = message.from_user.username
+				user.save()	
 
 			logger.info('Успешная регистрация {!s} [{!s}]'.format(message.from_user.first_name, uid))
 
@@ -288,6 +297,8 @@ def text_content_handler(message):
 			del READY_TO_EDIT_ABOUT[uid]
 		if uid in READY_TO_EDIT_PHOTO:
 			del READY_TO_EDIT_PHOTO[uid]
+		if uid in READY_TO_COMMENT:
+			del READY_TO_COMMENT[uid]
 
 		text = 'Действие отменено'
 		markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=False, row_width=1)
@@ -364,6 +375,37 @@ def text_content_handler(message):
 		if 'photo' not in READY_TO_EDIT_PHOTO[uid]:
 			return bot.send_message(cid, texts.register_invite_photo)
 
+	# Обработка отзывов
+	if uid in READY_TO_COMMENT:
+		if 'assessment' not in READY_TO_COMMENT[uid]:
+			try:
+				int(message.text)
+			except Exception as e:
+				return bot.send_message(uid, texts.error_assessment)
+			if int(message.text) < 1 or int(message.text) > 5:
+				return bot.send_message(uid, texts.error_assessment)
+			READY_TO_COMMENT[uid]['assessment'] = int(message.text)
+			return bot.send_message(uid, texts.user_rating_comment)
+		if 'comment' not in READY_TO_COMMENT[uid]:
+			READY_TO_COMMENT[uid]['comment'] = message.text
+			rating = util.get_stars_assessment(READY_TO_COMMENT[uid]['assessment'])
+			text = texts.add_rating_comment.format(rating, user.name, READY_TO_COMMENT[uid]['comment'])
+			markup = types.ReplyKeyboardMarkup(True,False)
+			for x in config.main_markup:
+				markup.row(*x)
+			user = database.comments.select().where(database.comments.myuid == uid, database.comments.uid == READY_TO_COMMENT[uid]['id'])
+			if user:
+				user = user.get()
+				user.rating = READY_TO_COMMENT[uid]['assessment']
+				user.text = text
+				user.save()
+				del READY_TO_COMMENT[uid]
+				return bot.send_message(uid, 'Отзыв изменен на: \n'+text, parse_mode = 'HTML', reply_markup = markup)
+			comment = database.comments(uid = READY_TO_COMMENT[uid]['id'], myuid = uid, rating = READY_TO_COMMENT[uid]['assessment'], text = text)
+			comment.save()
+			del READY_TO_COMMENT[uid]
+			bot.send_message(uid, 'Ваш отзыв: \n'+text, parse_mode = 'HTML')
+			return bot.send_message(uid, texts.succes_add_comment, reply_markup = markup)
 	# Обработка кнопок главного меню
 	if message.text == '🍺 Хочу выпить! 🍺':
 		logger.info('Хочет пить {!s} [{!s}]'.format(message.from_user.first_name, uid))
@@ -372,10 +414,14 @@ def text_content_handler(message):
 		if len(users) == 0:
 			return bot.send_message(cid, texts.no_active_user)
 		bot.send_message(cid, texts.lets_drink_text, parse_mode='HTML')
-		
 		text = util.generate_user_text(users[0])
+		check_rating = database.comments.select().where(database.comments.uid == users[0].uid)
+		if check_rating:
+			rating = util.get_average_rating(check_rating)
+			text += '\n\nРейтинг: {!s}'.format(rating)
 		keyboard = types.InlineKeyboardMarkup()
 		keyboard.add(types.InlineKeyboardButton('🥃 Пригласить выпить! 🥃', callback_data='invitedrink_{!s}'.format(users[0].id)))
+		keyboard.add(types.InlineKeyboardButton('🌟 Отзывы о собутыльнике 🌟', callback_data='getcomment_{!s}'.format(users[0].uid) ))
 		keyboard.add(types.InlineKeyboardButton('🔴 Пожаловаться 🔴', callback_data='report_{!s}'.format(users[0].id)))
 		keyboard.add(
 			types.InlineKeyboardButton('⬅️', callback_data='seeleftuser_{!s}'.format(users[0].id)),
@@ -400,6 +446,19 @@ def text_content_handler(message):
 		logger.info('Выдан тост {!s} [{!s}]'.format(message.from_user.first_name, uid))
 		text = util.get_tost_text()
 		return bot.send_message(cid, text)
+	elif message.text == '🌟 Рейтинг 🌟':
+		check_rating = database.comments.select().where(database.comments.uid == uid)
+		if not check_rating:
+			return bot.send_message(uid, texts.user_no_rating)
+		text = '🌟 Ваш рейтинг: {!s} 🌟'.format(util.get_average_rating(check_rating))
+		bot.send_message(uid, text)
+		READY_TO_RATING[uid] = {}
+		text = '<b>Отзыв о собутыльнике {!s}:</b>\n'.format(user.name)
+		text += check_rating[0].text
+		keyboard = types.InlineKeyboardMarkup()
+		keyboard.add(types.InlineKeyboardButton('Посмотреть анкету', callback_data = 'profile_{!s}'.format(check_rating[0].myuid) ))
+		keyboard.add(types.InlineKeyboardButton('⬅️', callback_data='seeleftcomment_{!s}_{!s}'.format(check_rating[0].id, uid)), types.InlineKeyboardButton('➡️', callback_data='seerightcomment_{!s}_{!s}'.format(check_rating[0].id, uid)))
+		bot.send_message(uid, text, reply_markup = keyboard, parse_mode = 'HTML')
 
 
 	# Обработать клавиатуру админа
@@ -428,7 +487,7 @@ def callback_inline(call):
 		bot.answer_callback_query(call.id, '✅')
 	except Exception as e:
 		print(e)
-
+	
 	# Обработка выбора пола при регистрации
 	if call.data.startswith('registergender'):
 		if uid not in READY_TO_REGISTER:
@@ -441,7 +500,17 @@ def callback_inline(call):
 		READY_TO_REGISTER[uid]['gender'] = gender
 		bot.edit_message_text('✅ Выбрано!', chat_id=cid, message_id=call.message.message_id, reply_markup=None)
 		return bot.send_message(cid, texts.register_ask_about)
-	elif call.data.startswith('seeanket'):
+	if call.data:
+		query = database.User.select().where(database.User.uid == uid)
+		# Проверка на регистрацию пользователя
+		if not query.exists():
+			bot.send_message(cid, random.choice(texts.sheet_frases), reply_markup=types.ReplyKeyboardRemove())
+			bot_start_url = 'https://t.me/{!s}?start={!s}'.format(bot.get_me().username, uid)
+			keyboard = types.InlineKeyboardMarkup()
+			keyboard.add(types.InlineKeyboardButton('🍾 Регистрация! 🍾', url=bot_start_url))
+			return bot.send_message(cid, texts.lets_register, reply_markup=keyboard)
+
+	if call.data.startswith('seeanket'):
 		user_id = int(call.data.split('_')[1])
 
 		logger.info('Посмотрел анкету {!s} [{!s}]'.format(call.from_user.first_name, uid))
@@ -490,14 +559,18 @@ def callback_inline(call):
 
 			keyboard = types.InlineKeyboardMarkup()
 			keyboard.add(types.InlineKeyboardButton('Ссылка на ЛС', url='tg://user?id={!s}'.format(my_user.uid)))
+			keyboard.add(types.InlineKeyboardButton('Оставить отзыв о собутыльнике', callback_data='addcomment_{!s}'.format(my_user.uid)))
 			bot.send_message(other_user.uid, text, parse_mode='HTML', reply_markup=keyboard)
 		except Exception as e:
 			print(e)
 
 		text = 'Пользователь {!s} принял ваше приглашение!'.format(other_user.name)
+		if other_user.username != 0:
+			text += '\n\nСсылка: @{!s}'.format(other_user.username)
 		bot.delete_message(chat_id=cid, message_id=call.message.message_id)
 		keyboard = types.InlineKeyboardMarkup()
 		keyboard.add(types.InlineKeyboardButton('Ссылка на ЛС', url='tg://user?id={!s}'.format(other_user.uid)))
+		keyboard.add(types.InlineKeyboardButton('Оставить отзыв о собутыльнике', callback_data='addcomment_{!s}'.format(other_user.uid)))
 		return bot.send_message(cid, text, reply_markup=keyboard)
 	elif call.data.startswith('notconfirmdrink'):
 		user_id = int(call.data.split('_')[1])
@@ -536,7 +609,10 @@ def callback_inline(call):
 					prev_user = all_users[-1]
 
 		text = util.generate_user_text(prev_user)
-
+		check_rating = database.comments.select().where(database.comments.uid == prev_user.uid)
+		if check_rating:
+			rating = util.get_average_rating(check_rating)
+			text += '\n\nРейтинг: {!s}'.format(rating)
 		# Проверка на ошибку редактирования сообщения
 		if call.message.caption == text:
 			text = 'Больше нет пользователей'
@@ -544,6 +620,7 @@ def callback_inline(call):
 
 		keyboard = types.InlineKeyboardMarkup()
 		keyboard.add(types.InlineKeyboardButton('🥃 Пригласить выпить! 🥃', callback_data='invitedrink_{!s}'.format(prev_user.id)))
+		keyboard.add(types.InlineKeyboardButton('🌟 Отзывы о собутыльнике 🌟', callback_data='getcomment_{!s}'.format(prev_user.uid) ))
 		keyboard.add(types.InlineKeyboardButton('🔴 Пожаловаться 🔴', callback_data='report_{!s}'.format(prev_user.id)))
 		keyboard.add(
 			types.InlineKeyboardButton('⬅️', callback_data='seeleftuser_{!s}'.format(prev_user.id)),
@@ -572,7 +649,10 @@ def callback_inline(call):
 					next_user = all_users[0]
 
 		text = util.generate_user_text(next_user)
-
+		check_rating = database.comments.select().where(database.comments.uid == next_user.uid)
+		if check_rating:
+			rating = util.get_average_rating(check_rating)
+			text += '\n\nРейтинг: {!s}'.format(rating)
 		# Проверка на ошибку редактирования сообщения
 		if call.message.caption == text:
 			text = 'Больше нет пользователей'
@@ -580,13 +660,97 @@ def callback_inline(call):
 
 		keyboard = types.InlineKeyboardMarkup()
 		keyboard.add(types.InlineKeyboardButton('🥃 Пригласить выпить! 🥃', callback_data='invitedrink_{!s}'.format(next_user.id)))
+		keyboard.add(types.InlineKeyboardButton('🌟 Отзывы о собутыльнике 🌟', callback_data='getcomment_{!s}'.format(next_user.uid) ))
 		keyboard.add(types.InlineKeyboardButton('🔴 Пожаловаться 🔴', callback_data='report_{!s}'.format(next_user.id)))
 		keyboard.add(
 			types.InlineKeyboardButton('⬅️', callback_data='seeleftuser_{!s}'.format(next_user.id)),
 			types.InlineKeyboardButton('➡️', callback_data='seerightuser_{!s}'.format(next_user.id)),
 		)
 		return bot.edit_message_media(media=types.InputMediaPhoto(open(next_user.photo_path, 'rb'), caption=text), chat_id=cid, message_id=call.message.message_id , reply_markup=keyboard)
+	# Отзывы об анкете
+	elif call.data.startswith('addcomment'):
+		id = int(call.data.split('_')[1])
+		user = database.User.select().where(database.User.uid == id)
+		READY_TO_COMMENT[uid] = {}
+		READY_TO_COMMENT[uid]['id'] = id
+		markup = types.ReplyKeyboardMarkup(True,False)
+		rating = '⚪️⚪️⚪️⚪️⚪️'
+		markup.row('❌ Отменить')
+		bot.send_message(uid, texts.user_rating_assessment.format(1), reply_markup = markup)
+	elif call.data.startswith('getcomment'):
+		if uid in READY_TO_RATING:
+			del READY_TO_RATING[uid]
+		id = int(call.data.split('_')[1])
+		query =  database.comments.select().where(database.comments.uid == id)
+		data = database.User.get(database.User.uid == id)
+		if not query:
+			return bot.send_message(uid, texts.comments_not_found_text)
+		user = query.get()
+		keyboard = types.InlineKeyboardMarkup()
+		keyboard.add(types.InlineKeyboardButton('Посмотреть анкету', callback_data = 'profile_{!s}'.format(user.myuid) ))
+		keyboard.add(types.InlineKeyboardButton('⬅️', callback_data='seeleftcomment_{!s}_{!s}'.format(query[0].id, user.uid)), types.InlineKeyboardButton('➡️', callback_data='seerightcomment_{!s}_{!s}'.format(query[0].id, user.uid)))
 
+		text = '<b>Отзыв о собутыльнике {!s}:</b>\n{!s}'.format(data.name, user.text)
+		bot.send_message(uid, text ,parse_mode = 'HTML', reply_markup = keyboard)
+
+	elif call.data.startswith('seeleftcomment'):
+		user_id = int(call.data.split('_')[1])
+		u_id = int(call.data.split('_')[2])
+		query =  database.comments.select().where(database.comments.uid == u_id)
+		if uid in READY_TO_RATING:
+			query = database.comments.select().where(database.comments.uid == uid)
+		user = query.get()
+		for i, x in enumerate(query):
+			if x.id == user_id:
+				try:
+					prev_com = query[i-1]
+				except Exception as e:
+					# При ошибке выбрать последнего пользователя
+					prev_com = query[-1]
+		data = database.User.get(database.User.uid == prev_com.uid)
+		text = '<b>Отзыв о собутыльнике {!s}:</b>\n{!s}'.format(data.name, prev_com.text)
+		keyboard = types.InlineKeyboardMarkup()
+		keyboard.add(types.InlineKeyboardButton('Посмотреть анкету', callback_data = 'profile_{!s}'.format(prev_com.myuid) ))
+		keyboard.add(types.InlineKeyboardButton('⬅️', callback_data='seeleftcomment_{!s}_{!s}'.format(prev_com.id, prev_com.uid)), types.InlineKeyboardButton('➡️', callback_data='seerightcomment_{!s}_{!s}'.format(prev_com.id, prev_com.uid)))
+		try:
+			return bot.edit_message_text(text, chat_id=cid, message_id=call.message.message_id,parse_mode='HTML', reply_markup=keyboard)
+		except Exception as e:
+			return bot.send_message(uid, 'Больше нет отзывов')
+
+	elif call.data.startswith('seerightcomment'):
+		user_id = int(call.data.split('_')[1])
+		u_id = int(call.data.split('_')[2])
+		query =  database.comments.select().where(database.comments.uid == u_id)
+		if uid in READY_TO_RATING:
+			query = database.comments.select().where(database.comments.uid == uid)
+		next_com = query[0]
+		for i, x in enumerate(query):
+			if x.id == user_id:
+				try:
+					next_com = query[i+1]
+				except Exception as e:
+					# При ошибке выбрать последнего пользователя
+					next_com = query[0]
+		data = database.User.get(database.User.uid == next_com.uid)
+		user = query.get()
+		text = '<b>Отзыв о собутыльнике {!s}:</b>\n{!s}'.format(data.name, next_com.text)
+		keyboard = types.InlineKeyboardMarkup()
+		keyboard.add(types.InlineKeyboardButton('Посмотреть анкету', callback_data = 'profile_{!s}'.format(next_com.myuid) ))
+		keyboard.add(types.InlineKeyboardButton('⬅️', callback_data='seeleftcomment_{!s}_{!s}'.format(next_com.id, next_com.uid)), types.InlineKeyboardButton('➡️', callback_data='seerightcomment_{!s}_{!s}'.format(next_com.id, next_com.uid)))
+		try:
+			return bot.edit_message_text(text, chat_id=cid, message_id=call.message.message_id, parse_mode='HTML',   reply_markup=keyboard)
+		except Exception as e:
+			return bot.send_message(uid, 'Больше нет отзывов')
+
+	elif call.data.startswith('profile'):
+		user_id = int(call.data.split('_')[1])
+		user = database.User.get(database.User.uid == user_id)
+		text = util.generate_user_text(user)
+		if user.uid == uid:
+			return bot.send_photo(cid, open(user.photo_path, 'rb'), caption=text)
+		keyboard = types.InlineKeyboardMarkup()
+		keyboard.add(types.InlineKeyboardButton('🥃 Пригласить выпить! 🥃', callback_data='invitedrink_{!s}'.format(user.id)))
+		return bot.send_photo(cid, open(user.photo_path, 'rb'), caption=text, reply_markup=keyboard)
 	# Жалобы на анкеты
 	elif call.data.startswith('report'):
 		user_id = int(call.data.split('_')[1])
@@ -600,7 +764,7 @@ def callback_inline(call):
 
 		bot.send_message(cid, texts.report_anket_text, parse_mode='HTML')
 
-		text = 'Пользователь <a href="tg://user?id={!s}">{!s}</a> оставил пожаловаться на анкету\n\n{!s}'.format(
+		text = 'Пользователь <a href="tg://user?id={!s}">{!s}</a> пожаловался на анкету\n\n{!s}'.format(
 			user.uid, user.name, util.generate_user_text(need_user))
 		keyboard = types.InlineKeyboardMarkup()
 		keyboard.add(
