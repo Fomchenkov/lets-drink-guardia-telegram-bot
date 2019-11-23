@@ -129,3 +129,6 @@ comments_not_found_text = """
 user_no_rating = """
 У вас еще нет отзывов..
 """
+user_add_wish = """
+Напишите пожелание
+"""

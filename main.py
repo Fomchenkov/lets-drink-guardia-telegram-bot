@@ -29,7 +29,7 @@ READY_TO_EDIT_ABOUT = {}
 READY_TO_EDIT_PHOTO = {}
 READY_TO_COMMENT = {}
 READY_TO_RATING = {}
-
+READY_TO_WISH = {}
 def clean_all_ready(uid):
 	"""
 	Очистить все READY TO
@@ -51,6 +51,8 @@ def clean_all_ready(uid):
 		del READY_TO_COMMENT[uid]
 	if uid in READY_TO_RATING:
 		del READY_TO_RATING[uid]
+	if uid in READY_TO_WISH:
+		del READY_TO_WISH[uid]
 
 
 @bot.message_handler(commands=['start'])
@@ -299,6 +301,8 @@ def text_content_handler(message):
 			del READY_TO_EDIT_PHOTO[uid]
 		if uid in READY_TO_COMMENT:
 			del READY_TO_COMMENT[uid]
+		if uid in READY_TO_WISH:
+			del READY_TO_WISH[uid]
 
 		text = 'Действие отменено'
 		markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=False, row_width=1)
@@ -374,7 +378,25 @@ def text_content_handler(message):
 	if uid in READY_TO_EDIT_PHOTO:
 		if 'photo' not in READY_TO_EDIT_PHOTO[uid]:
 			return bot.send_message(cid, texts.register_invite_photo)
+	# Обработка пожеланий
+	if uid in READY_TO_WISH:
+		if 'text' not in READY_TO_WISH[uid]:
+			READY_TO_WISH[uid]['text'] = message.text
+			user = database.User.get(database.User.uid == uid)
 
+			keyboard=types.InlineKeyboardMarkup()
+			keyboard.add(types.InlineKeyboardButton('Профиль', url='tg://user?id={!s}'.format(uid)))
+			text = '<b>Пожелание от {!s}</b>\n'.format(user.name)
+			if user.username != 0:
+				text += '<b>(@{!s})</b>\n'.format(user.username)
+			text += message.text
+			bot.send_message(config.report_channel_id, text, parse_mode = 'HTML', reply_markup = keyboard)
+			del READY_TO_WISH[uid]
+			markup=types.ReplyKeyboardMarkup(True,False)
+			for x in config.main_markup:
+				markup.row(*x)
+			text = 'Пожелание отправлено'
+			return bot.send_message(uid, text, reply_markup= markup)
 	# Обработка отзывов
 	if uid in READY_TO_COMMENT:
 		if 'assessment' not in READY_TO_COMMENT[uid]:
@@ -445,7 +467,10 @@ def text_content_handler(message):
 	elif message.text == '🥂 Тост! 🥂':
 		logger.info('Выдан тост {!s} [{!s}]'.format(message.from_user.first_name, uid))
 		text = util.get_tost_text()
-		return bot.send_message(cid, text)
+		keyboard = types.InlineKeyboardMarkup()
+		keyboard.add(types.InlineKeyboardButton('Новый тост', callback_data = 'gettost'))
+
+		return bot.send_message(cid, text, reply_markup = keyboard)
 	elif message.text == '🌟 Рейтинг 🌟':
 		check_rating = database.comments.select().where(database.comments.uid == uid)
 		if not check_rating:
@@ -459,7 +484,11 @@ def text_content_handler(message):
 		keyboard.add(types.InlineKeyboardButton('Посмотреть анкету', callback_data = 'profile_{!s}'.format(check_rating[0].myuid) ))
 		keyboard.add(types.InlineKeyboardButton('⬅️', callback_data='seeleftcomment_{!s}_{!s}'.format(check_rating[0].id, uid)), types.InlineKeyboardButton('➡️', callback_data='seerightcomment_{!s}_{!s}'.format(check_rating[0].id, uid)))
 		bot.send_message(uid, text, reply_markup = keyboard, parse_mode = 'HTML')
-
+	elif message.text == '📩 Пожелания 📩':
+		READY_TO_WISH[uid] = {}
+		markup = types.ReplyKeyboardMarkup(True, True)
+		markup.row('❌ Отменить')
+		bot.send_message(uid, texts.user_add_wish ,reply_markup = markup)
 
 	# Обработать клавиатуру админа
 	if uid in config.ADMINS:
@@ -500,6 +529,7 @@ def callback_inline(call):
 		READY_TO_REGISTER[uid]['gender'] = gender
 		bot.edit_message_text('✅ Выбрано!', chat_id=cid, message_id=call.message.message_id, reply_markup=None)
 		return bot.send_message(cid, texts.register_ask_about)
+	# Проверка регистрации
 	if call.data:
 		query = database.User.select().where(database.User.uid == uid)
 		# Проверка на регистрацию пользователя
@@ -791,6 +821,10 @@ def callback_inline(call):
 		q.execute()
 
 		return bot.edit_message_caption('Анкета забанена', chat_id=cid, message_id=call.message.message_id, reply_markup=None)
+	elif call.data.startswith('gettost'):
+		keyboard = types.InlineKeyboardMarkup()
+		keyboard.add(types.InlineKeyboardButton('Новый тост', callback_data = 'gettost'))
+		bot.edit_message_text(util.get_tost_text(), chat_id=cid, message_id = call.message.message_id, reply_markup = keyboard)
 
 	# Обработка редактирования анкеты
 	if call.data == 'editname':
