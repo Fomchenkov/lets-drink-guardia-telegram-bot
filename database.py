@@ -15,6 +15,7 @@ def create_tables():
 	db.connect()
 	db.create_tables([User])
 	db.create_tables([comments])
+	db.create_tables([geoposition])
 
 
 class BaseModel(Model):
@@ -24,12 +25,13 @@ class BaseModel(Model):
 
 class User(BaseModel):
 	uid = IntegerField(unique=True)
-	username = IntegerField(default = 0)
+	username = TextField(null = True)
 	name = TextField()
 	age = IntegerField()
 	# 0 - Мужчина, 1 - Женщина
 	gender = BooleanField()
 	about = TextField()
+	city = TextField(null = True)
 	photo_path = TextField()
 
 class comments(BaseModel):
@@ -38,3 +40,7 @@ class comments(BaseModel):
 	rating = IntegerField()
 	text = TextField()
 
+class geoposition(BaseModel):
+	uid = IntegerField(unique=True)
+	lat = TextField()
+	lon = TextField()

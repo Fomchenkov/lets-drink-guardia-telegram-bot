@@ -3,7 +3,7 @@
 import os
 import random
 import logging
-
+from geopy.distance import geodesic
 import telebot
 from telebot import apihelper, types
 
@@ -12,7 +12,6 @@ import main_func
 import database
 import config
 import texts
-
 
 logging.basicConfig(filename=config.LOG_PATH, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -27,8 +26,12 @@ READY_TO_EDIT_NAME = {}
 READY_TO_EDIT_AGE = {}
 READY_TO_EDIT_ABOUT = {}
 READY_TO_EDIT_PHOTO = {}
+READY_TO_EDIT_CITY = {}
+READY_TO_EDIT_GEO = {}
+
 READY_TO_COMMENT = {}
 READY_TO_RATING = {}
+
 READY_TO_WISH = {}
 def clean_all_ready(uid):
 	"""
@@ -53,8 +56,10 @@ def clean_all_ready(uid):
 		del READY_TO_RATING[uid]
 	if uid in READY_TO_WISH:
 		del READY_TO_WISH[uid]
-
-
+	if uid in READY_TO_EDIT_CITY:
+		del READY_TO_EDIT_CITY[uid]
+	if uid in READY_TO_EDIT_GEO:
+		del READY_TO_EDIT_GEO[uid]
 @bot.message_handler(commands=['start'])
 def start_command_handler(message):
 	cid = message.chat.id
@@ -199,6 +204,25 @@ def photo_content_handler(message):
 				markup.row(*x)
 			return bot.send_message(cid, text, reply_markup=markup)
 
+@bot.message_handler(content_types=['location'])
+def location_content_handler(message):
+	cid = message.chat.id
+	uid = message.from_user.id
+	if uid in READY_TO_EDIT_GEO:
+		query = database.geoposition.select().where(database.geoposition.uid == uid)
+		if not query:
+			user = database.geoposition(uid = uid, lat = message.location.latitude, lon = message.location.longitude)
+			user.save()
+		else:
+			user = query.get()
+			user.lat = message.location.latitude
+			user.lon = message.location.longitude
+			user.save()
+		text = 'Геолокация установлена'
+		markup = types.ReplyKeyboardMarkup(True, False)
+		for x in config.main_markup:
+			markup.row(*x)
+		return bot.send_message(cid, text,reply_markup = markup)
 
 @bot.message_handler(content_types=['text'])
 def text_content_handler(message):
@@ -303,7 +327,10 @@ def text_content_handler(message):
 			del READY_TO_COMMENT[uid]
 		if uid in READY_TO_WISH:
 			del READY_TO_WISH[uid]
-
+		if uid in READY_TO_EDIT_CITY:
+			del READY_TO_EDIT_CITY[uid]
+		if uid in READY_TO_EDIT_GEO:
+			del READY_TO_EDIT_GEO[uid]
 		text = 'Действие отменено'
 		markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=False, row_width=1)
 		for x in config.main_markup:
@@ -378,6 +405,20 @@ def text_content_handler(message):
 	if uid in READY_TO_EDIT_PHOTO:
 		if 'photo' not in READY_TO_EDIT_PHOTO[uid]:
 			return bot.send_message(cid, texts.register_invite_photo)
+	# Обработка изменений данных анкеты
+	if uid in READY_TO_EDIT_CITY:
+		if 'city' not in READY_TO_EDIT_CITY[uid]:
+			if message.text not in config.city:
+				return bot.send_message(uid, texts.error_edit_user_city)
+			READY_TO_EDIT_CITY[uid]['city'] = message.text
+			user = database.User.get(database.User.uid == uid)
+			user.city = message.text
+			user.save()
+			markup = types.ReplyKeyboardMarkup(True,False)
+			for x in config.main_markup:
+				markup.row(*x)
+			del READY_TO_EDIT_CITY[uid]
+			bot.send_message(uid, texts.edit_user_city_good.format(user.city), reply_markup = markup)
 	# Обработка пожеланий
 	if uid in READY_TO_WISH:
 		if 'text' not in READY_TO_WISH[uid]:
@@ -387,7 +428,7 @@ def text_content_handler(message):
 			keyboard=types.InlineKeyboardMarkup()
 			keyboard.add(types.InlineKeyboardButton('Профиль', url='tg://user?id={!s}'.format(uid)))
 			text = '<b>Пожелание от {!s}</b>\n'.format(user.name)
-			if user.username != 0:
+			if user.username:
 				text += '<b>(@{!s})</b>\n'.format(user.username)
 			text += message.text
 			bot.send_message(config.report_channel_id, text, parse_mode = 'HTML', reply_markup = keyboard)
@@ -441,6 +482,10 @@ def text_content_handler(message):
 		if check_rating:
 			rating = util.get_average_rating(check_rating)
 			text += '\n\nРейтинг: {!s}'.format(rating)
+		geo = [database.geoposition.select().where(database.geoposition.uid == uid), database.geoposition.select().where(database.geoposition.uid == users[0].uid)]
+		if geo[0] and geo[1]:
+			distance = geodesic((geo[0].get().lat, geo[0].get().lon),(geo[1].get().lat, geo[1].get().lon), ellipsoid='WGS-84').km
+			text += '\nРасстояние: {!s} км.'.format(round(distance, 1))
 		keyboard = types.InlineKeyboardMarkup()
 		keyboard.add(types.InlineKeyboardButton('🥃 Пригласить выпить! 🥃', callback_data='invitedrink_{!s}'.format(users[0].id)))
 		keyboard.add(types.InlineKeyboardButton('🌟 Отзывы о собутыльнике 🌟', callback_data='getcomment_{!s}'.format(users[0].uid) ))
@@ -453,11 +498,19 @@ def text_content_handler(message):
 	elif message.text == '👑 Моя анкета 👑':
 		logger.info('Просмотр своей анкеты {!s} [{!s}]'.format(message.from_user.first_name, uid))
 		text = 'Ваша анкета:\n\n{!s}'.format(util.generate_user_text(user))
+		user = database.User.get(database.User.uid == uid)
+		city = '🏬г. {!s} 🏬'.format(user.city)
+		if not user.city:
+			city = '🏬 Город не установлен 🏬'
 		keyboard = types.InlineKeyboardMarkup()
 		keyboard.add(types.InlineKeyboardButton('✏️ Изменить имя ✏️', callback_data='editname'))
 		keyboard.add(types.InlineKeyboardButton('✏️ Изменить возраст ✏️', callback_data='editage'))
 		keyboard.add(types.InlineKeyboardButton('✏️ Изменить описание ✏️', callback_data='editabout'))
 		keyboard.add(types.InlineKeyboardButton('✏️ Изменить фото ✏️', callback_data='editphoto'))
+		keyboard.add(
+			types.InlineKeyboardButton('🌎 Геопозиция 🌎', callback_data='geo'),
+			types.InlineKeyboardButton(city, callback_data = 'editcity')
+			)
 		return bot.send_photo(cid, open(user.photo_path, 'rb'), caption=text, reply_markup=keyboard)
 	elif message.text == '📨 Поддержка 📨':
 		logger.info('Просмотр поддержки {!s} [{!s}]'.format(message.from_user.first_name, uid))
@@ -516,8 +569,6 @@ def callback_inline(call):
 		bot.answer_callback_query(call.id, '✅')
 	except Exception as e:
 		print(e)
-	
-	# Обработка выбора пола при регистрации
 	if call.data.startswith('registergender'):
 		if uid not in READY_TO_REGISTER:
 			bot.send_message(cid, random.choice(texts.sheet_frases), reply_markup=types.ReplyKeyboardRemove())
@@ -539,7 +590,6 @@ def callback_inline(call):
 			keyboard = types.InlineKeyboardMarkup()
 			keyboard.add(types.InlineKeyboardButton('🍾 Регистрация! 🍾', url=bot_start_url))
 			return bot.send_message(cid, texts.lets_register, reply_markup=keyboard)
-
 	if call.data.startswith('seeanket'):
 		user_id = int(call.data.split('_')[1])
 
@@ -583,23 +633,25 @@ def callback_inline(call):
 
 		try:
 			text = 'Пользователь {!s} согласен выпить с вами!'.format(my_user.name)
-
+			url='tg://user?id={!s}'.format(my_user.uid)
 			if call.from_user.username:
 				text += '\n\nСсылка: @{!s}'.format(call.from_user.username)
-
+				url='t.me/{!s}'.format(call.from_user.username)
 			keyboard = types.InlineKeyboardMarkup()
-			keyboard.add(types.InlineKeyboardButton('Ссылка на ЛС', url='tg://user?id={!s}'.format(my_user.uid)))
+			keyboard.add(types.InlineKeyboardButton('Ссылка на ЛС', url=url))
 			keyboard.add(types.InlineKeyboardButton('Оставить отзыв о собутыльнике', callback_data='addcomment_{!s}'.format(my_user.uid)))
 			bot.send_message(other_user.uid, text, parse_mode='HTML', reply_markup=keyboard)
 		except Exception as e:
 			print(e)
 
 		text = 'Пользователь {!s} принял ваше приглашение!'.format(other_user.name)
-		if other_user.username != 0:
+		url = 'tg://user?id={!s}'.format(other_user.uid)
+		if other_user.username:
 			text += '\n\nСсылка: @{!s}'.format(other_user.username)
+			url = 't.me/{!s}'.format(other_user.username)
 		bot.delete_message(chat_id=cid, message_id=call.message.message_id)
 		keyboard = types.InlineKeyboardMarkup()
-		keyboard.add(types.InlineKeyboardButton('Ссылка на ЛС', url='tg://user?id={!s}'.format(other_user.uid)))
+		keyboard.add(types.InlineKeyboardButton('Ссылка на ЛС', url=url))
 		keyboard.add(types.InlineKeyboardButton('Оставить отзыв о собутыльнике', callback_data='addcomment_{!s}'.format(other_user.uid)))
 		return bot.send_message(cid, text, reply_markup=keyboard)
 	elif call.data.startswith('notconfirmdrink'):
@@ -643,6 +695,11 @@ def callback_inline(call):
 		if check_rating:
 			rating = util.get_average_rating(check_rating)
 			text += '\n\nРейтинг: {!s}'.format(rating)
+		geo = [database.geoposition.select().where(database.geoposition.uid == uid), database.geoposition.select().where(database.geoposition.uid == prev_user.uid)]
+		if geo[0] and geo[1]:
+			distance = geodesic((geo[0].get().lat, geo[0].get().lon),(geo[1].get().lat, geo[1].get().lon), ellipsoid='WGS-84').km
+			text += '\nРасстояние: {!s} км.'.format(round(distance, 1))
+
 		# Проверка на ошибку редактирования сообщения
 		if call.message.caption == text:
 			text = 'Больше нет пользователей'
@@ -683,6 +740,11 @@ def callback_inline(call):
 		if check_rating:
 			rating = util.get_average_rating(check_rating)
 			text += '\n\nРейтинг: {!s}'.format(rating)
+		geo = [database.geoposition.select().where(database.geoposition.uid == uid), database.geoposition.select().where(database.geoposition.uid == next_user.uid)]
+		if geo[0] and geo[1]:
+			distance = geodesic((geo[0].get().lat, geo[0].get().lon),(geo[1].get().lat, geo[1].get().lon), ellipsoid='WGS-84').km
+			text += '\nРасстояние: {!s} км.'.format(round(distance, 1))
+
 		# Проверка на ошибку редактирования сообщения
 		if call.message.caption == text:
 			text = 'Больше нет пользователей'
@@ -704,7 +766,6 @@ def callback_inline(call):
 		READY_TO_COMMENT[uid] = {}
 		READY_TO_COMMENT[uid]['id'] = id
 		markup = types.ReplyKeyboardMarkup(True,False)
-		rating = '⚪️⚪️⚪️⚪️⚪️'
 		markup.row('❌ Отменить')
 		bot.send_message(uid, texts.user_rating_assessment.format(1), reply_markup = markup)
 	elif call.data.startswith('getcomment'):
@@ -825,6 +886,16 @@ def callback_inline(call):
 		keyboard = types.InlineKeyboardMarkup()
 		keyboard.add(types.InlineKeyboardButton('Новый тост', callback_data = 'gettost'))
 		bot.edit_message_text(util.get_tost_text(), chat_id=cid, message_id = call.message.message_id, reply_markup = keyboard)
+	elif call.data == 'geo':
+		user = database.geoposition.select().where(database.geoposition.uid == uid)
+		keyboard = types.InlineKeyboardMarkup()
+		if user:
+			user = user.get()
+			keyboard.add(types.InlineKeyboardButton('Оправить другую геопозицию', callback_data = 'editgeo'))
+			bot.send_message(uid, '<b>Ваша геопозиция:</b>',parse_mode='HTML')
+			return bot.send_location(uid, user.lat, user.lon, reply_markup = keyboard)
+		keyboard.add(types.InlineKeyboardButton('Отправить геопозицию', callback_data = 'editgeo'))
+		return bot.send_message(uid, texts.user_set_geo, reply_markup = keyboard)
 
 	# Обработка редактирования анкеты
 	if call.data == 'editname':
@@ -851,7 +922,20 @@ def callback_inline(call):
 		markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=False, row_width=1)
 		markup.row('❌ Отменить')
 		return bot.send_message(cid, text, reply_markup=markup)
-
+	elif call.data == 'editcity':
+		READY_TO_EDIT_CITY[uid] = {}
+		markup = types.ReplyKeyboardMarkup(True, True)
+		markup.row( '❌ Отменить')
+		for x in config.city:
+			markup.add(x)
+		bot.send_message(uid, texts.edit_user_city, reply_markup = markup)
+	elif call.data == 'editgeo':
+		text = 'Отправьте свое местоположение'
+		READY_TO_EDIT_GEO[uid] = {}
+		markup = types.ReplyKeyboardMarkup(True,False)
+		markup.add(types.KeyboardButton(text="Отправить местоположение", request_location=True))
+		markup.add('❌ Отменить')
+		bot.send_message(uid, text, reply_markup = markup)
 
 if __name__ == '__main__':
 	logger.info('Запуск процесса бота')

@@ -16,10 +16,12 @@ def generate_user_text(db_user_object):
 		gender_text = 'Мужчина'
 	elif db_user_object == 1 or db_user_object.gender == True:
 		gender_text = 'Женщина'
-
-	return 'Имя: {!s}\n\nВозраст: {!s}\n\nПол: {!s}\n\nОбо мне: {!s}'.format(
+	text =  'Имя: {!s}\n\nВозраст: {!s}\n\nПол: {!s}\n\nОбо мне: {!s}'.format(
 		db_user_object.name, db_user_object.age, gender_text, db_user_object.about
 	)
+	if db_user_object.city:
+		text += '\n\nГород: {!s}'.format(db_user_object.city)
+	return text
 
 
 def get_tost_text():
