@@ -42,6 +42,7 @@ def get_tost_text():
 
 	return texts.error_tost
 
+
 def get_stars_assessment(ass):
 	"""
 	Рейтинг в графическом виде
@@ -50,6 +51,7 @@ def get_stars_assessment(ass):
 	for x in range(ass):
 		rating = '\U00002605' + rating
 		rating = rating[:-1]
+
 	return rating
 
 def get_average_rating(comment):
@@ -60,4 +62,3 @@ def get_average_rating(comment):
 	for x in comment:	
 		average += x.rating
 	return average/len(comment)
-

@@ -11,7 +11,6 @@ def main(bot):
 	database.create_tables()
 
 	# Создать папку для хранения фоток пользователей
-
 	try:
 		os.mkdir(config.photos_path)
 	except Exception as e:

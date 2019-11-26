@@ -3,9 +3,10 @@
 import os
 import random
 import logging
-from geopy.distance import geodesic
+
 import telebot
 from telebot import apihelper, types
+from geopy.distance import geodesic
 
 import util
 import main_func
@@ -13,26 +14,27 @@ import database
 import config
 import texts
 
+
 logging.basicConfig(filename=config.LOG_PATH, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
 bot = telebot.TeleBot(config.BOT_TOKEN)
 
+
 READY_TO_REGISTER = {}
-
 READY_TO_EMAIL = {}
-
 READY_TO_EDIT_NAME = {}
 READY_TO_EDIT_AGE = {}
 READY_TO_EDIT_ABOUT = {}
 READY_TO_EDIT_PHOTO = {}
 READY_TO_EDIT_CITY = {}
 READY_TO_EDIT_GEO = {}
-
 READY_TO_COMMENT = {}
 READY_TO_RATING = {}
-
 READY_TO_WISH = {}
+
+
 def clean_all_ready(uid):
 	"""
 	Очистить все READY TO
@@ -60,6 +62,8 @@ def clean_all_ready(uid):
 		del READY_TO_EDIT_CITY[uid]
 	if uid in READY_TO_EDIT_GEO:
 		del READY_TO_EDIT_GEO[uid]
+
+
 @bot.message_handler(commands=['start'])
 def start_command_handler(message):
 	cid = message.chat.id
@@ -204,6 +208,7 @@ def photo_content_handler(message):
 				markup.row(*x)
 			return bot.send_message(cid, text, reply_markup=markup)
 
+
 @bot.message_handler(content_types=['location'])
 def location_content_handler(message):
 	cid = message.chat.id
@@ -223,6 +228,7 @@ def location_content_handler(message):
 		for x in config.main_markup:
 			markup.row(*x)
 		return bot.send_message(cid, text,reply_markup = markup)
+
 
 @bot.message_handler(content_types=['text'])
 def text_content_handler(message):
@@ -405,6 +411,7 @@ def text_content_handler(message):
 	if uid in READY_TO_EDIT_PHOTO:
 		if 'photo' not in READY_TO_EDIT_PHOTO[uid]:
 			return bot.send_message(cid, texts.register_invite_photo)
+
 	# Обработка изменений данных анкеты
 	if uid in READY_TO_EDIT_CITY:
 		if 'city' not in READY_TO_EDIT_CITY[uid]:
@@ -419,6 +426,7 @@ def text_content_handler(message):
 				markup.row(*x)
 			del READY_TO_EDIT_CITY[uid]
 			bot.send_message(uid, texts.edit_user_city_good.format(user.city), reply_markup = markup)
+
 	# Обработка пожеланий
 	if uid in READY_TO_WISH:
 		if 'text' not in READY_TO_WISH[uid]:
@@ -438,6 +446,7 @@ def text_content_handler(message):
 				markup.row(*x)
 			text = 'Пожелание отправлено'
 			return bot.send_message(uid, text, reply_markup= markup)
+
 	# Обработка отзывов
 	if uid in READY_TO_COMMENT:
 		if 'assessment' not in READY_TO_COMMENT[uid]:
@@ -469,6 +478,7 @@ def text_content_handler(message):
 			del READY_TO_COMMENT[uid]
 			bot.send_message(uid, 'Ваш отзыв: \n'+text, parse_mode = 'HTML')
 			return bot.send_message(uid, texts.succes_add_comment, reply_markup = markup)
+
 	# Обработка кнопок главного меню
 	if message.text == '🍺 Хочу выпить! 🍺':
 		logger.info('Хочет пить {!s} [{!s}]'.format(message.from_user.first_name, uid))
@@ -928,14 +938,15 @@ def callback_inline(call):
 		markup.row( '❌ Отменить')
 		for x in config.city:
 			markup.add(x)
-		bot.send_message(uid, texts.edit_user_city, reply_markup = markup)
+		return bot.send_message(uid, texts.edit_user_city, reply_markup = markup)
 	elif call.data == 'editgeo':
 		text = 'Отправьте свое местоположение'
 		READY_TO_EDIT_GEO[uid] = {}
-		markup = types.ReplyKeyboardMarkup(True,False)
-		markup.add(types.KeyboardButton(text="Отправить местоположение", request_location=True))
+		markup = types.ReplyKeyboardMarkup(True, False)
+		markup.add(types.KeyboardButton(text='Отправить местоположение', request_location=True))
 		markup.add('❌ Отменить')
-		bot.send_message(uid, text, reply_markup = markup)
+		return bot.send_message(uid, text, reply_markup = markup)
+
 
 if __name__ == '__main__':
 	logger.info('Запуск процесса бота')
